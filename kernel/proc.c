@@ -295,6 +295,8 @@ fork(void)
 
   np->state = RUNNABLE;
 
+  np->trmask = p->trmask;
+
   release(&np->lock);
 
   return pid;
@@ -692,4 +694,19 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+proccount()
+{
+  int count;
+  struct proc* p;
+
+  count = 0;
+  for (p = proc; p < proc + NPROC; p++) {
+    if (p->state != UNUSED) {
+      count++;
+    }
+  }
+  return count;
 }
