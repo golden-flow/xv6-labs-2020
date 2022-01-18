@@ -1,7 +1,7 @@
 Progress
 
 - [x] Utilities
-- [ ] System calls
+- [x] System calls
 - [ ] Page tables
 - [ ] Traps
 - [ ] Lazy allocation
