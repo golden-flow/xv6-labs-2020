@@ -47,12 +47,49 @@ kvminit()
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
 }
 
+/*
+ * A modified version of kvminit that create a direct-mapping
+ * page table for the kernel; Return that page table
+ * instead of storing it in kernel_pagetable.
+ */
+pagetable_t
+kvminitnew()
+{
+  pagetable_t pagetable;
+  
+  pagetable = (pagetable_t)kalloc();
+  if (!pagetable) {
+    panic("kvminitnew");
+    return 0;
+  }
+  memset(pagetable, 0, PGSIZE);
+  mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W);
+  mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W);
+  mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W);
+  mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W);
+  mappages(pagetable, KERNBASE, (uint64)etext - KERNBASE, KERNBASE, PTE_R | PTE_X);
+  mappages(pagetable, (uint64)etext, PHYSTOP - (uint64)etext, (uint64)etext, PTE_R | PTE_W);
+  mappages(pagetable, TRAMPOLINE, PGSIZE, (uint64)trampoline, PTE_R | PTE_X);
+
+  return pagetable;
+}
+
+
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
 void
 kvminithart()
 {
   w_satp(MAKE_SATP(kernel_pagetable));
+  sfence_vma();
+}
+
+// Switch h/w page table register to a given page table,
+// and enable paging.
+void 
+kvmswtchpgtbl(pagetable_t pagetable)
+{
+  w_satp(MAKE_SATP(pagetable));
   sfence_vma();
 }
 
@@ -87,6 +124,23 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   }
   return &pagetable[PX(0, va)];
 }
+
+// Return the physical address that corresponds to the virtual
+// address in the kernel pagetable.
+uint64
+kwalk(uint64 va)
+{
+  pte_t *pte;
+  uint64 pa;
+
+  if (va >= MAXVA) return 0;
+  if (va < PHYSTOP) return va;
+  pte = walk(kernel_pagetable, va, 0);
+  if (pte == 0 || (*pte & PTE_V) == 0) return 0;
+  pa = PTE2PA(*pte);
+  return pa;
+}
+
 
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
@@ -267,6 +321,23 @@ uvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   }
 
   return newsz;
+}
+
+// Recursively free page-table pages without freeing
+// leaf mappings. Used for freeing a kernel pagetable.
+void
+freetable(pagetable_t pagetable)
+{
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if (pte & PTE_V && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+      // this PTE points to a lower-level page table.
+      uint64 child = PTE2PA(pte);
+      freetable((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
 }
 
 // Recursively free page-table pages.
@@ -461,6 +532,33 @@ vmprint(pagetable_t pgtbl2)
       for (k = 0; k < 512; k++) {
         pte_t pte0 = pgtbl0[k];
         if ((pte0 & PTE_V) == 0) continue;
+        printf(".. .. ..%d: pte %p pa %p\n", k, pte0, PTE2PA(pte0));
+      }
+    }
+  }
+}
+
+// Print a kernel pagetable. Ignore identity mappings below PHYSTOP.
+void
+kvmprint(pagetable_t pgtbl2)
+{
+  int i, j, k;
+
+  printf("page table %p\n", pgtbl2);
+  for (i = 0; i < 512; i++) {
+    pte_t pte2 = pgtbl2[i];
+    if ((pte2 & PTE_V) == 0) continue;
+    printf("..%d: pte %p pa %p\n", i, pte2, PTE2PA(pte2));
+    pagetable_t pgtbl1 = (pagetable_t)PTE2PA(pte2);
+    for (j = 0; j < 512; j++) {
+      pte_t pte1 = pgtbl1[j];
+      if ((pte1 & PTE_V) == 0) continue;
+      printf(".. ..%d: pte %p pa %p\n", j, pte1, PTE2PA(pte1));
+      pagetable_t pgtbl0 = (pagetable_t)PTE2PA(pte1);
+      for (k = 0; k < 512; k++) {
+        pte_t pte0 = pgtbl0[k];
+        if ((pte0 & PTE_V) == 0) continue;
+        if (PTE2PA(pte0) < PHYSTOP) continue;
         printf(".. .. ..%d: pte %p pa %p\n", k, pte0, PTE2PA(pte0));
       }
     }
