@@ -1,3 +1,54 @@
+# Class note for lecture 5
+
+GDB commands:
+
+- layout asm: Show the assembly code.
+- layout reg: Show contents of the registers.
+- layout src: Show C source code.
+- layout split: Show source code and assembly.
+- focus asm/reg/src: Focus on a particular window, so that we can scroll that 
+  window with up/down buttons.
+
+- (Enter): Repeat the most recent command.
+- info breakpoints: Show all breakpoints.
+- info registers: Show all registers.
+- info frames: Show the current stack frame.
+- info args: Show current function arguments.
+
+- backtrace / bt / info stack: Show all stacks.
+- frame 3: switch to the 3rd frame.
+- delete: delete all breakpoints.
+- print statement: print the result of the statement.
+  - p *argv shows the first argument
+  - p *argv@2 shows the first two arguments
+  - p *argv@argc shows the whole argument vector
+
+- info locals: Show local variables.
+- watch i: Get a notification whenever i changes.
+- break sum_to if i==5: Break at sum_to when i is 5
+
+- apropos [-v] tui/...: show all commands that involve tui.
+
+Use tmux to obtain multiple windows in CLI:
+
+- Ctrl-b c: get a nother window.
+- Ctrl-b p, Ctrl-b n: navigate to the previous/next window.
+- Ctrl-b %: split windows vertically.
+- Ctrl-b ": split windows horizontally.
+- Ctrl-b o: jump between splitted windows.
+
+Stacks:
+
+- The stack grows downward.
+- sp points to the bottom of the stack; fp points to the top of the current
+  frame.
+- Leaf functions are special because they don't need to save their return
+  address or any caller-saved registers.
+- A function prologue is the piece of code that stores registers on the stack.
+  The epilogue is where we restore those registers.
+
+# Lab note for syscall
+
 System call tracing
 -------------------
 
