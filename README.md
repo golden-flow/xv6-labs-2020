@@ -2,7 +2,7 @@ Progress
 
 - [x] Utilities
 - [x] System calls
-- [ ] Page tables
+- [x] Page tables
 - [ ] Traps
 - [ ] Lazy allocation
 - [ ] Copy on-write
