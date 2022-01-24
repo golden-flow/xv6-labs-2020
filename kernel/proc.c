@@ -249,6 +249,11 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // user mapping in kernel pagetable
+  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
+    panic("userinit: kvmcopyu failed");
+  }
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -270,6 +275,10 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+
+  // Prevent processes from growing larger than the PLIC address
+  if (sz + n >= PLIC) return -1;
+
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
@@ -278,6 +287,13 @@ growproc(int n)
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
   p->sz = sz;
+
+  // Update user mappings in kernel pagetable.
+  kfreewalku(p->kpagetable);
+  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
+    panic("sbrk: kvmcopyu failed");
+  }
+
   return 0;
 }
 
@@ -302,6 +318,13 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // Copy user mapping to kernel mapping.
+  if (kvmcopyu(np->pagetable, np->kpagetable, np->sz) < 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   np->parent = p;
 

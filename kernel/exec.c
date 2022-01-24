@@ -116,6 +116,12 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
+  // Update user mappings in kernel pagetable.
+  kfreewalku(p->kpagetable);
+  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
+    panic("exec: kvmcopyu failed");
+  }
+  
   if (p->pid == 1) {
     vmprint(p->pagetable);
   }
