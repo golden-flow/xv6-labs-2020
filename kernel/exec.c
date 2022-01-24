@@ -117,8 +117,8 @@ exec(char *path, char **argv)
   proc_freepagetable(oldpagetable, oldsz);
 
   // Update user mappings in kernel pagetable.
-  kfreewalku(p->kpagetable);
-  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
+  kfreewalku(p->kpagetable, 0, oldsz);
+  if (kvmcopyu(p->pagetable, p->kpagetable, 0, p->sz) < 0) {
     panic("exec: kvmcopyu failed");
   }
   

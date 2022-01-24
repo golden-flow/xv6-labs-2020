@@ -250,7 +250,7 @@ userinit(void)
   p->sz = PGSIZE;
 
   // user mapping in kernel pagetable
-  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
+  if (kvmcopyu(p->pagetable, p->kpagetable, 0, p->sz) < 0) {
     panic("userinit: kvmcopyu failed");
   }
 
@@ -276,23 +276,16 @@ growproc(int n)
 
   sz = p->sz;
 
-  // Prevent processes from growing larger than the PLIC address
-  if (sz + n >= PLIC) return -1;
-
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    kvmcopyu(p->pagetable, p->kpagetable, p->sz, n);
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    kfreewalku(p->kpagetable, sz, -n);
   }
   p->sz = sz;
-
-  // Update user mappings in kernel pagetable.
-  kfreewalku(p->kpagetable);
-  if (kvmcopyu(p->pagetable, p->kpagetable, p->sz) < 0) {
-    panic("sbrk: kvmcopyu failed");
-  }
 
   return 0;
 }
@@ -320,7 +313,7 @@ fork(void)
   np->sz = p->sz;
 
   // Copy user mapping to kernel mapping.
-  if (kvmcopyu(np->pagetable, np->kpagetable, np->sz) < 0) {
+  if (kvmcopyu(np->pagetable, np->kpagetable, 0, np->sz) < 0) {
     freeproc(np);
     release(&np->lock);
     return -1;

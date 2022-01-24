@@ -66,7 +66,7 @@ kvminitnew()
   memset(pagetable, 0, PGSIZE);
   mappages(pagetable, UART0, PGSIZE, UART0, PTE_R | PTE_W);
   mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W);
-  mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W);
+  // mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W);
   mappages(pagetable, PLIC, 0x400000, PLIC, PTE_R | PTE_W);
   mappages(pagetable, KERNBASE, (uint64)etext - KERNBASE, KERNBASE, PTE_R | PTE_X);
   mappages(pagetable, (uint64)etext, PHYSTOP - (uint64)etext, (uint64)etext, PTE_R | PTE_W);
@@ -285,6 +285,8 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 {
   char *mem;
   uint64 a;
+    
+  if (newsz >= PLIC) return 0;
 
   if(newsz < oldsz)
     return oldsz;
@@ -520,16 +522,21 @@ kvmprint(pagetable_t pgtbl2)
   }
 }
 
-// Copy the mappings up to sz from pagetable src to pagetable dst.
+// Copy the mappings from va to va+sz from pagetable src to pagetable dst.
 // Do not copy the physical pages. Mappings should be present.
+// va and sz may not be page aligned.
 int
-kvmcopyu(pagetable_t old, pagetable_t new, uint64 sz)
+kvmcopyu(pagetable_t old, pagetable_t new, uint64 va, uint64 sz)
 {
+  if ((va >= PLIC))
+    panic("kvmcopyu: va >= PLIC");
   pte_t *pte;
-  uint64 pa, i;
+  uint64 pa, i, end;
   uint flags;
 
-  for(i = 0; i < sz; i += PGSIZE){
+  end = va + sz;
+  va = PGROUNDUP(va);
+  for(i = va; i < end; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
@@ -548,19 +555,14 @@ kvmcopyu(pagetable_t old, pagetable_t new, uint64 sz)
 }
 
 // Remove user mappings in a kernel pagetable. Does not check the
-// physical pages.
+// physical pages. va is page aligned, sz may not.
+// Note that addresses between [va+sz, PGROUNDUP(va+sz)) will lose
+// their mappings.
 void
-kfreewalku(pagetable_t pagetable)
+kfreewalku(pagetable_t pagetable, uint64 va, uint64 sz)
 {
-  int i = 0;
-  pte_t pte2 = pagetable[i];
-  if ((pte2 & PTE_V) == 0) return; // no user mappings
-  pagetable_t pgtbl1 = (pagetable_t)PTE2PA(pte2);
-  for (int j = 0; j < 96; j++) { // to 0x0c000000
-    pte_t* pte1 = &pgtbl1[j];
-    if ((*pte1 & PTE_V) == 0) continue; // no mapping here
-    pagetable_t pgtbl0 = (pagetable_t)PTE2PA(*pte1);
-    kfree((void*)pgtbl0);
-    *pte1 = 0;
-  }
+  int end = va + sz;
+  va = PGROUNDUP(va);
+  int npages = (PGROUNDUP(end) - va) / PGSIZE;
+  uvmunmap(pagetable, va, npages, 0);
 }

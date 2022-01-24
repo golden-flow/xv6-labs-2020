@@ -1,3 +1,30 @@
+Print a page table
+------------------
+
+照做即可。
+
+A kernel page table per process
+-------------------------------
+
+xv-6 各个进程的内核模式共享页表，本任务要求为各个进程添加独立页表。
+
+- 按理来说每个进程的页表只需要保留本进程的 kernel stack，不过因为嫌麻烦没实现。
+- scheduler (kernel/proc.c) 的具体流程有待理顺。
+- 卡住的原因最后发现是调用函数时名称写错 (kernel/proc.c:510)。
+
+Simplify copyin/copyinstr
+-------------------------
+
+这里要求为各个进程的 kernel page table 添加 user space mapping。
+
+- 一开始为图省事，在 sbrk 里面每次都把 user mappings in kernel page table 全部
+删掉再重新 map，结果超时。后来改为 map 新增的部分、unmap 回收的部分。由于用户内存是
+连续的，所以可以直接用 PGROUNDUP 取边界值。
+- 出现 remap 的原因是 CLINT 卡在 0x02000000 的位置，而题目要求用户空间最多可达
+0x0c000000。最后简单地删掉了这个映射。
+
+=====================================================================
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

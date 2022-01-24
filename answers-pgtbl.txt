@@ -1,0 +1,26 @@
+1. Print a page table
+
+Q: Explain the output of vmprint.
+
+User memory grows upward from page 0. Page 510 and 511 are the trapframe and 
+trampoline page respectively.
+
+Q: What does page 0 contain?
+
+Page 0 contains the text and data segments of the init process.
+
+Q: What is in page 2?
+
+Page 2 contains the user stack.
+
+Q: Could the process read/write the memory mapped by page 1 when running in 
+user mode?
+
+No. The corresponding PTE for page 1 has the User bit turned off.
+
+3. Simplify copyin/copyinstr
+
+Q: Why is the third test srcva + len < srcva necessary in copyin_new()?
+
+This is to prevent an overflow when adding len to srcva. This will happen when 
+srcva=0xFFFF FFFF FFFF FFFF, and len=0x1.
