@@ -132,3 +132,18 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+void
+backtrace(void)
+{
+  uint64 fp, max_addr, min_addr;
+
+  printf("backtrace:\n");
+  fp = r_fp();
+  max_addr = PGROUNDUP(fp);
+  min_addr = PGROUNDDOWN(fp);
+  while (min_addr <= fp && fp < max_addr) {
+    printf("%p\n", *(uint64*)(fp - 8));
+    fp = *(uint64*)(fp - 16);
+  }
+}

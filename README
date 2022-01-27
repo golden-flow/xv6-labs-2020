@@ -1,3 +1,31 @@
+Backtrace
+---------
+
+照做即可。需要判断读取的上一层 frame pointer 是否在当前页，上下界都要考虑。
+
+Alarm
+-----
+
+相当于是实现了 user level trap，即让用户模式的 trap handler 来处理用户模式产生的
+trap。具体流程是：
+
+1. timer interrupt，进入内核模式
+2. 判断当前 timer interrupt 是否要调用 handler。如果是：
+3. 把 sepc 设置为 handler 地址
+4. 然后 sret 跳转到用户模式 handler
+5. handler 末尾调用 sigreturn()，执行 system call，再进入内核模式
+6. 在 sys_sigreturn() 中，恢复第一次进入内核模式前的状态
+7. 使用 sret 跳转到用户模式，继续执行用户程序
+
+p->trapframe 保存的是进入 trap 前的 CPU 快照，因此按道理只需要在第 3 步把 trapframe
+保存起来，再在第 6 步恢复即可。C 中复制结构体只需要一条语句，故添加的代码不多。
+
+是否需要保存 trapframe 中的 callee saved registers？我的想法是由于是在 handler 最后
+一个语句调用 sigreturn()，handler 的 function epilogue 没有执行，因此 callee saved
+registers 不会被恢复。保险起见，应该保存所有寄存器。
+
+==============================================================================
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

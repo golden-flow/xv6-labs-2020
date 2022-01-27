@@ -1,0 +1,30 @@
+RISC-V assembly
+---------------
+
+Q Which registers contain arguments to functions?
+
+Registers a0, a1 and a2. Specifically, a2 holds 13 in main's call to printf.
+
+Q Where is the call to function f in the assembly code for main? Where is the call to g?
+
+The function f is not called in main. It is hardcoded in the instruction `li a1, 12` at 0x26. The function g is inlined in function f.
+
+Q At what address is function printf located?
+
+0x628.
+
+Q What value is in the register ra just after the jalr to printf in main?
+
+0x38.
+
+Q What is the output of the code?
+
+  unsigned int i = 0x00646c72;
+  printf("H%x Wo%s", 57616, &i);
+
+The output is "HE110 World". If the RISC-V were big-endian, i should be set to 0x726c6400. 57616 need not changing.
+
+Q What is going to be printed after 'y=' for printf("x=%d y=%d", 3); ?
+
+Garbage (or what is left in a2 when printf is called).
+ 
