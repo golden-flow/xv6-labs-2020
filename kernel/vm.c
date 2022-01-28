@@ -109,6 +109,7 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
   pa = PTE2PA(*pte);
   return pa;
+  // Add lazy allocation!
 }
 
 // add a mapping to the kernel page table.
@@ -297,7 +298,6 @@ freewalk(pagetable_t pagetable)
 void
 uvmfree(pagetable_t pagetable, uint64 sz)
 {
-  printf("uvmfree(%p, 0x%x)\n", pagetable, sz);
   if(sz > 0)
     uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 1);
   freewalk(pagetable);
@@ -352,6 +352,8 @@ uvmclear(pagetable_t pagetable, uint64 va)
   *pte &= ~PTE_U;
 }
 
+extern uint64 lazymap(struct proc* p, uint64 stval);
+
 // Copy from kernel to user.
 // Copy len bytes from src to virtual address dstva in a given page table.
 // Return 0 on success, -1 on error.
@@ -363,7 +365,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(pa0 == 0 && (pa0 = lazymap(myproc(), va0)) == 0) // important
       return -1;
     n = PGSIZE - (dstva - va0);
     if(n > len)
@@ -388,7 +390,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(pa0 == 0 && (pa0 = lazymap(myproc(), va0)) == 0) // important
       return -1;
     n = PGSIZE - (srcva - va0);
     if(n > len)

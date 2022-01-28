@@ -31,34 +31,31 @@ trapinithart(void)
 
 // When a page fault occurs due to lazy allocation,
 // call this function to do the actual mapping.
-void
-lazymap(void)
+// Returns the physical address of the allocated page, or 0 if error.
+uint64
+lazymap(struct proc* p, uint64 stval)
 {
-  struct proc* p = myproc();
-
-  uint64 stval = r_stval();
   // printf("page fault: %p\n", stval);
   if (stval >= p->sz) {
-    printf("illegal memory\n");
-    p->killed = 1;
+    return 0; // important!
   }
   if (p->stackbase - PGSIZE <= stval && stval < p->stackbase) {
-    p->killed = 1;
+    return 0; // important!
   }
 
   uint64 va = PGROUNDDOWN(stval);
   uint64 mem = (uint64)kalloc();
   if (!mem) {
     // printf("usertrap(): not enough physical memory.");
-    p->killed = 1;
+    return 0;
   }
   if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
     kfree((void*)mem);
     // printf("usertrap(): cannot map new page.");
-    p->killed = 1;
+    return 0;
   }
+  return mem;
 }
-
 
 //
 // handle an interrupt, exception, or system call from user space.
@@ -99,7 +96,9 @@ usertrap(void)
     syscall();
   } else if (scause == 13 || scause == 15) {
     // 13 is load page fault, 15 is store page fault
-    lazymap();
+    if (lazymap(p, r_stval()) == 0) {
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -169,6 +168,7 @@ void
 kerneltrap()
 {
   int which_dev = 0;
+  struct proc* p = myproc();
   uint64 sepc = r_sepc();
   uint64 sstatus = r_sstatus();
   uint64 scause = r_scause();
@@ -180,19 +180,18 @@ kerneltrap()
 
   if (scause == 13 || scause == 15) {
     // 13 is load page fault, 15 is store page fault
-    lazymap();
-  }
-
-  if((which_dev = devintr()) == 0){
+    if (lazymap(p, r_stval()) == 0) {
+      p->killed = 1;
+    }
+  } else if((which_dev = devintr()) == 0){
     printf("scause %p\n", scause);
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
-  }
-
-  // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  } else if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING) {
+    // give up the CPU if this is a timer interrupt.
     yield();
-
+  }
+    
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
   w_sepc(sepc);
