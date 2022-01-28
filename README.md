@@ -4,7 +4,7 @@ Progress
 - [x] System calls
 - [x] Page tables
 - [x] Traps
-- [ ] Lazy allocation
+- [x] Lazy allocation
 - [ ] Copy on-write
 - [ ] Multithreading
 - [ ] Lock
