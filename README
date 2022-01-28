@@ -1,3 +1,36 @@
+Eliminate allocation from sbrk()
+--------------------------------
+
+照做即可。
+
+Lazy allocation
+---------------
+
+该任务的工作主要是 trap.c 里面的 lazymap() 函数。当 scause 为 13 或 15 时调用该
+函数，函数中需要检查 stval 在 p->sz 之下，且不在 user stack 之下的 guard page 内。
+遇到了以下问题：
+
+- 为了判断 stval 是否在 guard page 内，我在 proc 中保存了 stackbase 变量，即用户栈
+  的起始地址，并在 exec() 分配用户栈后填入。但我在 fork() 中忘记了把这个变量复制到子进
+  程，导致子进程中 stackbase 为 0，判断失败。
+- 修改代码时脑袋不清醒，没有在不满足条件时立即退出并杀死进程，而只是设置了 p->killed = 1，
+  结果下面分配物理页照常，导致后续回收进程页表时部分物理页未能回收而 panic。
+
+Lazytests and Usertests
+-----------------------
+
+为了让 xv6 其余部分工作正常，应作如下改动：
+
+- kernel/vm.c 中的 uvmunmap() 和 uvmcopy() 不应再检测 walk() 返回 0 和 PTE_V == 0
+  的情况。
+- 当 sbrk() 参数为负时，直接调用 uvmdealloc()。经由上一步更改，回收空间时应该可以直接跳过
+  已申请但尚未分配的页。
+- 由于内核读取用户虚拟地址使用的是 walkaddr()，因此当 walkaddr() 返回 0 时，应该调用
+  lazymap() 分配物理页。（lazymap() 中会判断虚拟地址是否合法。）
+- 注意出错时及时杀死进程；没有映射到页表的物理页应当立即回收。
+
+==============================================================================
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

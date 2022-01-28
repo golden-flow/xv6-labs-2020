@@ -35,7 +35,6 @@ trapinithart(void)
 uint64
 lazymap(struct proc* p, uint64 stval)
 {
-  // printf("page fault: %p\n", stval);
   if (stval >= p->sz) {
     return 0; // important!
   }

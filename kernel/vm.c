@@ -109,7 +109,6 @@ walkaddr(pagetable_t pagetable, uint64 va)
     return 0;
   pa = PTE2PA(*pte);
   return pa;
-  // Add lazy allocation!
 }
 
 // add a mapping to the kernel page table.
@@ -184,7 +183,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)
       continue;
     if((*pte & PTE_V) == 0) {
-      *pte = 0; // important!!!
+      // *pte = 0; // important!!!
       continue;
     }
     if(PTE_FLAGS(*pte) == PTE_V)
