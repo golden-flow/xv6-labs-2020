@@ -29,6 +29,37 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+// When a page fault occurs due to lazy allocation,
+// call this function to do the actual mapping.
+void
+lazymap(void)
+{
+  struct proc* p = myproc();
+
+  uint64 stval = r_stval();
+  // printf("page fault: %p\n", stval);
+  if (stval >= p->sz) {
+    printf("illegal memory\n");
+    p->killed = 1;
+  }
+  if (p->stackbase - PGSIZE <= stval && stval < p->stackbase) {
+    p->killed = 1;
+  }
+
+  uint64 va = PGROUNDDOWN(stval);
+  uint64 mem = (uint64)kalloc();
+  if (!mem) {
+    // printf("usertrap(): not enough physical memory.");
+    p->killed = 1;
+  }
+  if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0) {
+    kfree((void*)mem);
+    // printf("usertrap(): cannot map new page.");
+    p->killed = 1;
+  }
+}
+
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -37,6 +68,7 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  int scause;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -50,7 +82,7 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if((scause = r_scause()) == 8){
     // system call
 
     if(p->killed)
@@ -65,6 +97,9 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (scause == 13 || scause == 15) {
+    // 13 is load page fault, 15 is store page fault
+    lazymap();
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -142,6 +177,11 @@ kerneltrap()
     panic("kerneltrap: not from supervisor mode");
   if(intr_get() != 0)
     panic("kerneltrap: interrupts enabled");
+
+  if (scause == 13 || scause == 15) {
+    // 13 is load page fault, 15 is store page fault
+    lazymap();
+  }
 
   if((which_dev = devintr()) == 0){
     printf("scause %p\n", scause);
