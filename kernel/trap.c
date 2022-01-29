@@ -5,11 +5,14 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "vm.h"
 
 struct spinlock tickslock;
 uint ticks;
 
 extern char trampoline[], uservec[], userret[];
+
+extern int refcount[]; // defined in vm.c
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -29,6 +32,7 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -37,6 +41,7 @@ void
 usertrap(void)
 {
   int which_dev = 0;
+  uint64 scause;
 
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
@@ -50,7 +55,7 @@ usertrap(void)
   // save user program counter.
   p->trapframe->epc = r_sepc();
   
-  if(r_scause() == 8){
+  if((scause = r_scause()) == 8){
     // system call
 
     if(p->killed)
@@ -65,6 +70,10 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (scause == 15) {
+    if (cow(p->pagetable, PGROUNDDOWN(r_stval())) != 0) {
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {

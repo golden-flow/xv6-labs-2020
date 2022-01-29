@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "vm.h"
 
 /*
  * the kernel's page table.
@@ -14,6 +15,8 @@ pagetable_t kernel_pagetable;
 extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
+
+int refcount[(PHYSTOP - KERNBASE) / PGSIZE];
 
 /*
  * create a direct-map page table for the kernel.
@@ -58,7 +61,8 @@ kvminithart()
 
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
-// create any required page-table pages.
+// create any required page-table pages. Return 0 if
+// alloc==0 and va is invalid.
 //
 // The risc-v Sv39 scheme has three levels of page-table
 // pages. A page-table page contains 512 64-bit PTEs.
@@ -72,7 +76,7 @@ pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
-    panic("walk");
+    return 0;
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -159,6 +163,8 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
+    if (pa >= KERNBASE && pagetable != kernel_pagetable)
+      REFCOUNT(pa)++;
     if(a == last)
       break;
     a += PGSIZE;
@@ -175,6 +181,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
   uint64 a;
   pte_t *pte;
+  uint64 pa;
 
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
@@ -186,8 +193,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
       panic("uvmunmap: not mapped");
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+    pa = PTE2PA(*pte);
+    if (pa >= KERNBASE && pagetable != kernel_pagetable) REFCOUNT(pa)--;
     if(do_free){
-      uint64 pa = PTE2PA(*pte);
       kfree((void*)pa);
     }
     *pte = 0;
@@ -300,18 +308,17 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 }
 
 // Given a parent process's page table, copy
-// its memory into a child's page table.
-// Copies both the page table and the
-// physical memory.
+// its mappings into a child's page table.
+// Only copy the page table (copy physical memory
+// on write).
+// Assume the new page table is empty.
 // returns 0 on success, -1 on failure.
-// frees any allocated pages on failure.
 int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -320,11 +327,10 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // disable write, enable COW flag
+    *pte = (*pte & (~PTE_W)) | PTE_COW;
+    flags = (flags & (~PTE_W)) | PTE_COW;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
   }
@@ -355,12 +361,25 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
+  pte_t* pte;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    pte = walk(pagetable, va0, 0);
+    if (pte == 0) {
       return -1;
+    }
+    pa0 = PTE2PA(*pte);
+    if (*pte & PTE_COW) {
+      if (cow(pagetable, va0) != 0) {
+        return -1;
+      } else {
+        pa0 = walkaddr(pagetable, va0);
+        if (pa0 == 0) {
+          panic("cow");
+        }
+      }
+    }
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
@@ -439,4 +458,54 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+// Copy-on-write the page starting from va in given pagetable.
+// va must be page aligned. Return 0 on success, -1 on failure.
+int
+cow(pagetable_t pagetable, uint64 va)
+{
+  void* mem;
+  pte_t* pte;
+  uint flags;
+  uint64 pa;
+
+  pte = walk(pagetable, va, 0);
+  if (pte == 0 || (*pte & PTE_COW) == 0) {
+    // Not mapped, or not a COW mapping
+    return -1;
+  } 
+
+  // COW mapping
+  // pa is the starting address of this physical page
+  pa = (uint64)PTE2PA(*pte);
+
+  if (REFCOUNT(pa) > 1) {
+    if ((mem = kalloc()) == 0) {
+      // cannot allocate memory
+      return -1;
+    }
+    memmove(mem, (void*)pa, PGSIZE);
+
+    flags = PTE_FLAGS(*pte);
+    flags = (flags & ~(PTE_COW)) | PTE_W;
+    uvmunmap(pagetable, va, 1, 0);
+    if (mappages(pagetable, va, PGSIZE, (uint64)mem, flags) != 0) {
+      // cannot map new page
+      kfree(mem);
+      return -1;
+    }
+    if (REFCOUNT((uint64)mem) != 1) {
+      printf("copy on write: refcount of new page is %d\n", REFCOUNT((uint64)mem));
+      panic("copy on write");
+    }
+  }
+  else if (REFCOUNT(pa) == 1) {
+    *pte = (*pte & ~(PTE_COW)) | PTE_W;
+  }
+  else {
+    panic("copy on write: refcount is zero");
+  }
+  // printf("cow(%p, %p) success\n", pagetable, va);
+  return 0;
 }
