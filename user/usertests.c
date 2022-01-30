@@ -2581,6 +2581,17 @@ countfree()
 {
   int fds[2];
 
+  // int rfc = 0;
+  // printf("Countfree: pages whose refcounts are not zero:\n");
+  // for (int i = KERNBASE; i < PHYSTOP; i+= PGSIZE) {
+  //   if (REFCOUNT(i)) {
+  //     printf("0x%x\n", i);
+  //   }
+  //   rfc++;
+  //   if (rfc % 8 == 0) printf("\n");
+  // }
+  // printf("\n");
+
   if(pipe(fds) < 0){
     printf("pipe() failed in countfree()\n");
     exit(1);
@@ -2695,7 +2706,7 @@ main(int argc, char *argv[])
     {reparent2, "reparent2"},
     {pgbug, "pgbug" },
     {sbrkbugs, "sbrkbugs" },
-    // {badwrite, "badwrite" },
+    {badwrite, "badwrite" },
     {badarg, "badarg" },
     {reparent, "reparent" },
     {twochildren, "twochildren"},
@@ -2709,7 +2720,7 @@ main(int argc, char *argv[])
     {concreate, "concreate"},
     {subdir, "subdir"},
     {fourfiles, "fourfiles"},
-    {sharedfd, "sharedfd"},
+    {sharedfd, "sharedfd"}, //
     {dirtest, "dirtest"},
     {exectest, "exectest"},
     {bigargtest, "bigargtest"},

@@ -6,6 +6,7 @@
 #include "defs.h"
 #include "fs.h"
 #include "vm.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -17,6 +18,7 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 extern char trampoline[]; // trampoline.S
 
 int refcount[(PHYSTOP - KERNBASE) / PGSIZE];
+struct spinlock refcount_lock;
 
 /*
  * create a direct-map page table for the kernel.
@@ -164,7 +166,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if (pagetable != kernel_pagetable) {
+      acquire(&refcount_lock);
       REFCOUNT(pa)++;
+      release(&refcount_lock);
     }
     if(a == last)
       break;
@@ -198,7 +202,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     pa = PTE2PA(*pte);
-    if (pa >= KERNBASE && pagetable != kernel_pagetable) REFCOUNT(pa)--;
+    acquire(&refcount_lock);
+    REFCOUNT(pa)--;
+    release(&refcount_lock);
     if(do_free){
       kfree((void*)pa);
     }
@@ -486,7 +492,9 @@ cow(pagetable_t pagetable, uint64 va)
   // pa is the starting address of this physical page
   pa = (uint64)PTE2PA(*pte);
 
+  acquire(&refcount_lock);
   rfcount = REFCOUNT(pa);
+  release(&refcount_lock);
 
   if (rfcount > 1) {
     if ((mem = kalloc()) == 0) {

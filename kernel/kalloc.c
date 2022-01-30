@@ -16,6 +16,7 @@ extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
 extern int refcount[]; // defined in vm.c
+extern struct spinlock refcount_lock;
 
 struct run {
   struct run *next;
@@ -46,10 +47,17 @@ freerange(void *pa_start, void *pa_end)
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
 // initializing the allocator; see kinit above.)
+// Must hold refcount_lock when calling this.
 void
 kfree(void *pa)
 {
-  if (REFCOUNT((uint64)pa) > 0) return;
+  int rfcount;
+
+  acquire(&refcount_lock);
+  rfcount = REFCOUNT((uint64)pa);
+  release(&refcount_lock);
+
+  if (rfcount > 0) return;
 
   struct run *r;
 
