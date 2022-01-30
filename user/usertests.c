@@ -964,6 +964,7 @@ forkforkfork(char *s)
   unlink("stopforking");
 
   int pid = fork();
+
   if(pid < 0){
     printf("%s: fork failed", s);
     exit(1);

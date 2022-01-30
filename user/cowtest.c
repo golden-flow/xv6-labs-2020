@@ -177,19 +177,66 @@ filetest()
   printf("ok\n");
 }
 
+void
+mytest()
+{
+  uint64 phys_size = PHYSTOP - KERNBASE;
+  int sz = phys_size / 4;
+  int pid1, pid2, pid3;
+
+  printf("my: ");
+  
+  char *p = sbrk(sz);
+  if(p == (char*)0xffffffffffffffffL){
+    printf("sbrk(%d) failed\n", sz);
+    exit(-1);
+  }
+
+  if ((pid1 = fork()) == 0) {
+    if ((pid2 = fork()) == 0) {
+      if ((pid3 = fork()) == 0) {
+        // process 4
+        for (char* q = p; q < p + sz / 4; q += 4096) {
+          *(int*)q = 4;
+        }
+        exit(0);
+      }
+      // process 3
+      for (char* q = p; q < p + sz / 3; q += 4096) {
+        *(int*)q = 3;
+      }
+      wait(0);
+      exit(0);
+    }
+    // process 2
+    for (char* q = p; q < p + sz / 2; q += 4096) {
+      *(int*)q = 2;
+    }
+    wait(0);
+    exit(0);
+  }
+  // process 1
+  for (char* q = p; q < p + sz; q += 4096) {
+    *(int*)q = 1;
+  }
+  wait(0);
+  printf("finished\n");
+}
+
 int
 main(int argc, char *argv[])
 {
-  simpletest();
+  mytest();
+  // simpletest();
 
   // check that the first simpletest() freed the physical memory.
-  simpletest();
+  // simpletest();
 
-  threetest();
-  threetest();
-  threetest();
+  // threetest();
+  // threetest();
+  // threetest();
 
-  filetest();
+  // filetest();
 
   printf("ALL COW TESTS PASSED\n");
 

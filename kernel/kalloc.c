@@ -31,6 +31,7 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&refcount_lock, "refcount");
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -53,9 +54,7 @@ kfree(void *pa)
 {
   int rfcount;
 
-  acquire(&refcount_lock);
   rfcount = REFCOUNT((uint64)pa);
-  release(&refcount_lock);
 
   if (rfcount > 0) return;
 
@@ -92,4 +91,39 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+ushort flags[(PHYSTOP - KERNBASE) / PGSIZE];
+ushort* getflag(uint64 addr) {
+  return &flags[(addr - KERNBASE) / PGSIZE];
+}
+
+// Return the number of bytes of free memory
+int
+freememcount()
+{
+  int count;
+  struct run *r;
+
+  count = 0;
+  memset(flags, 0, sizeof(flags));
+  r = kmem.freelist;
+  while (r) {
+    count += 1;
+    *getflag((uint64)r) = 1;
+    r = r->next;
+  }
+  printf("These physical pages are not free after the kernel:\n");
+  int cnt = 0;
+  for (uint64 i = PGROUNDUP((uint64)end); i < PHYSTOP; i += PGSIZE) {
+    if (*getflag(i) == 0) {
+      printf("%p ", i);
+      if (cnt % 8 == 7) {
+        printf("\n");
+      }
+      cnt++;
+    }
+  }
+  printf("\n");
+  return count;
 }

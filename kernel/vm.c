@@ -204,10 +204,10 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     pa = PTE2PA(*pte);
     acquire(&refcount_lock);
     REFCOUNT(pa)--;
-    release(&refcount_lock);
     if(do_free){
       kfree((void*)pa);
     }
+    release(&refcount_lock);
     *pte = 0;
   }
 }
@@ -518,5 +518,31 @@ cow(pagetable_t pagetable, uint64 va)
   else {
     panic("copy on write: refcount is zero");
   }
+  return 0;
+}
+
+void
+checkref()
+{
+  int rfc = 0;
+  printf("Pages whose refcounts are not zero:\n");
+  for (uint64 i = KERNBASE; i < PHYSTOP; i += PGSIZE) {
+    if (REFCOUNT(i)) {
+      printf("%p ", i);
+      if (rfc % 8 == 7) {
+        printf("\n");
+      }
+      rfc++;
+    }
+  }
+  printf("\n");
+  printf("Free pages: %d\n", freememcount());
+  printf("Done.\n");
+}
+
+uint64
+sys_checkref()
+{
+  checkref();
   return 0;
 }
