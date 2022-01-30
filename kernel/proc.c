@@ -136,11 +136,11 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  if(p->pagetable)
+    proc_freepagetable(p->pagetable, p->sz);
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
-  if(p->pagetable)
-    proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -264,11 +264,13 @@ fork(void)
 
   // Allocate process.
   if((np = allocproc()) == 0){
+    printf("fork: cannot allocate process\n");
     return -1;
   }
 
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+    printf("fork: cannot copy user memory\n");
     freeproc(np);
     release(&np->lock);
     return -1;

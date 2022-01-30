@@ -163,8 +163,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
     if(*pte & PTE_V)
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
-    if (pa >= KERNBASE && pagetable != kernel_pagetable)
+    if (pagetable != kernel_pagetable) {
       REFCOUNT(pa)++;
+    }
     if(a == last)
       break;
     a += PGSIZE;
@@ -179,6 +180,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
+  if (pagetable == kernel_pagetable) {
+    panic("uvmunmap: kernel pagetable");
+  }
   uint64 a;
   pte_t *pte;
   uint64 pa;
@@ -246,6 +250,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
   for(a = oldsz; a < newsz; a += PGSIZE){
     mem = kalloc();
     if(mem == 0){
+      printf("uvmalloc: cannot kalloc\n");
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -366,7 +371,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pte = walk(pagetable, va0, 0);
-    if (pte == 0) {
+    if (pte == 0 || (*pte & PTE_V) == 0) {
       return -1;
     }
     pa0 = PTE2PA(*pte);
@@ -469,10 +474,11 @@ cow(pagetable_t pagetable, uint64 va)
   pte_t* pte;
   uint flags;
   uint64 pa;
+  int rfcount;
 
   pte = walk(pagetable, va, 0);
-  if (pte == 0 || (*pte & PTE_COW) == 0) {
-    // Not mapped, or not a COW mapping
+  if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0) {
+    printf("Not mapped, or not a COW mapping\n");
     return -1;
   } 
 
@@ -480,9 +486,11 @@ cow(pagetable_t pagetable, uint64 va)
   // pa is the starting address of this physical page
   pa = (uint64)PTE2PA(*pte);
 
-  if (REFCOUNT(pa) > 1) {
+  rfcount = REFCOUNT(pa);
+
+  if (rfcount > 1) {
     if ((mem = kalloc()) == 0) {
-      // cannot allocate memory
+      printf("cannot allocate memory\n");
       return -1;
     }
     memmove(mem, (void*)pa, PGSIZE);
@@ -491,21 +499,16 @@ cow(pagetable_t pagetable, uint64 va)
     flags = (flags & ~(PTE_COW)) | PTE_W;
     uvmunmap(pagetable, va, 1, 0);
     if (mappages(pagetable, va, PGSIZE, (uint64)mem, flags) != 0) {
-      // cannot map new page
+      printf("cannot map new page\n");
       kfree(mem);
       return -1;
     }
-    if (REFCOUNT((uint64)mem) != 1) {
-      printf("copy on write: refcount of new page is %d\n", REFCOUNT((uint64)mem));
-      panic("copy on write");
-    }
   }
-  else if (REFCOUNT(pa) == 1) {
+  else if (rfcount == 1) {
     *pte = (*pte & ~(PTE_COW)) | PTE_W;
   }
   else {
     panic("copy on write: refcount is zero");
   }
-  // printf("cow(%p, %p) success\n", pagetable, va);
   return 0;
 }
