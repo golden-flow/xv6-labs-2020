@@ -65,6 +65,10 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if (r_scause() == 15) {
+    if (cow()) {
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -218,3 +222,11 @@ devintr()
   }
 }
 
+// Copy-on-write handler. Return 0 if the copy-on-write
+// process is successful, or 1 otherwise.
+int
+cow()
+{
+  printf("cow\n");
+  return 1;
+}
