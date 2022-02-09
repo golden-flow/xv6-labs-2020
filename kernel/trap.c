@@ -66,7 +66,7 @@ usertrap(void)
 
     syscall();
   } else if (r_scause() == 15) {
-    if (cow()) {
+    if (cow(p->pagetable, r_stval())) {
       p->killed = 1;
     }
   } else if((which_dev = devintr()) != 0){
@@ -222,11 +222,36 @@ devintr()
   }
 }
 
-// Copy-on-write handler. Return 0 if the copy-on-write
-// process is successful, or 1 otherwise.
+// Copy-on-write handler. Assume stval contains the virtual
+// address that caused the fault. Return 0 if the copy-on-write
+// process is successful, 1 if no need to handle copy-on-write, -1
+// if failure on copy-on-write.
 int
-cow()
+cow(pagetable_t pagetable, uint64 va)
 {
-  printf("cow\n");
-  return 1;
+  void* mem;
+  uint memflags;
+  uint64 pa;
+
+  if (va >= MAXVA)
+    return 1;
+
+  va = PGROUNDDOWN(va); // starting address of the virtual page
+  pte_t* pte = walk(pagetable, va, 0);
+  if (pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_COW) == 0) {
+    // not a valid copy-on-write PTE; no need to do copy-on-write
+    return 1;
+  }
+  pa = PTE2PA(*pte);
+  if ((mem = kalloc()) == 0) {
+    return -1;
+  }
+  memmove(mem, (void*)pa, PGSIZE);
+  memflags = ((PTE_FLAGS(*pte)) & (~PTE_COW)) | PTE_W;
+  uvmunmap(pagetable, va, 1, 1);
+  if (mappages(pagetable, va, PGSIZE, (uint64)mem, memflags) != 0) {
+    kfree(mem);
+    return -1;
+  }
+  return 0;
 }

@@ -1,3 +1,38 @@
+COW Fork
+--------
+
+大致思路是：
+
+- 当对用户页表调用 mappages 时，对应物理页的 refcount + 1；对（只能是用户）页表
+  调用 uvmunmap 时，对应物理页的 refcount - 1。
+- 对 refcount 为 0 的页进行 kfree 操作时，才实际将该页放到 freelist 中，否则不
+  做处理。
+- 使用 uvmcopy 将父进程内存拷贝到子进程时，父子页表置 PTE_COW 位，清除 PTE_W 位。
+- 遇到 PTE_COW 置位的 store page fault 时，将当前进程页表中对应页先 unmap（导致
+  原物理页的 refcount - 1），复制到新物理页，再将新物理页 map 到当前进程页表（清除
+  PTE_COW，置 PTE_W）。
+- 在 copyout 中模拟上述 page fault 行为。
+
+注意一些小问题，比如 copyout 中检查页表项是否有效。
+
+22/01/30：现在的问题是 CPUS=1 时可以通过测试，但多个 CPU 时会出现少页现象，即没有
+释放干净。目前尝试对 refcount 数组加锁，但似乎无效。为了 debug，添加了以下内容：
+
+- 在 cowtest.c 中添加了一个测试用例 mytest()，大致是 4 个进程同时写 COW 内存，
+  会导致少页，而且每次运行少的页数不同。（奇怪的是即使用 wait() 让 4 个进程互相等
+  待，仍然会少 2 页，不知为何）
+- 添加了 checkref 系统调用，可以显示 refcount > 0 以及不再 freelist 中的页地址。
+
+应该是加锁的位置不对，或者还有东西需要加锁？没有头绪，先放一会儿……
+
+22/02/10: 过完春节假期，从头开始写，2 小时搞定。不得不说存在玄学成分……
+
+- 这次参照实验指导，在 kalloc 时将 refcount 置 1，uvmcopy 时 refcount++，kfree
+  时 refcount--，当 refcount 为 0 时实际释放内存。
+- 给每个 page 的 refcount 单独加锁。
+
+======================================================================
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

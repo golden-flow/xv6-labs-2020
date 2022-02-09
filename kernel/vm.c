@@ -5,6 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
 
 /*
  * the kernel's page table.
@@ -156,7 +157,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
+    if(*pte & PTE_V) 
       panic("remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
@@ -320,7 +321,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     pa = PTE2PA(*pte);
     *pte = ((*pte) & (~PTE_W)) | PTE_COW;
     flags = PTE_FLAGS(*pte);
-
+    acquire(&ref(pa)->lock);
+    ref(pa)->count++;
+    release(&ref(pa)->lock);
     if(mappages(new, i, PGSIZE, pa, flags) != 0){
       goto err;
     }
@@ -354,6 +357,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    if (cow(pagetable, dstva) == -1) {
+      return -1;
+    }
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
