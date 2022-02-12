@@ -56,10 +56,6 @@ thread_schedule(void)
 {
   struct thread *t, *next_thread;
 
-  for (int i = 0; i < MAX_THREAD; i++) {
-    t = &all_thread[i];
-  }
-
   /* Find another runnable thread. */
   next_thread = 0;
   t = current_thread + 1;
