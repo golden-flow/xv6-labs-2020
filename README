@@ -1,3 +1,25 @@
+Uthread
+-------
+
+难度不大。注意运行栈是向下增长的。
+
+Using threads
+-------------
+
+没有难度。
+
+Barrier
+-------
+
+两个地方需要同步：
+
+- 当 bstate.nthread 等于 nthread 时，才能让所有线程退出本轮的 barrier。这一条件由
+  bstate.barrier_cond 条件变量保证。
+- 当所有进程都退出本轮 barrier 后，才能进入下一轮的 barrier。这一条件由
+  bstate.barrier_cond_fast 条件变量保证。
+
+=========================================================================
+
 xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
 Version 6 (v6).  xv6 loosely follows the structure and style of v6,
 but is implemented for a modern RISC-V multiprocessor using ANSI C.

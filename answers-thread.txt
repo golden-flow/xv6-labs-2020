@@ -1,0 +1,18 @@
+Q Identify a sequence of events with 2 threads that can lead to a key being missing.
+
+Two threads may insert different new keys to the same bucket concurrently. The following
+sequence may occur:
+
+    THREAD 1                      THREAD 2
+    e->key = key;
+                                  e->key = key;
+    e->value = value;              
+                                  e->value = value;
+    e->next = n;
+                                  e->next = n;
+    *p = e;
+                                  *p = e;
+    (the value of n is identical in both threads)
+
+The two next pointers point to the same entry. One of the new entries is assigned to
+*p, and the other entry will be lost.
