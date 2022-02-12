@@ -6,7 +6,7 @@ Progress
 - [x] Traps
 - [x] Lazy allocation
 - [x] Copy on-write
-- [ ] Multithreading
+- [x] Multithreading
 - [ ] Lock
 - [ ] File system
 - [ ] mmap
